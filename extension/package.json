@@ -2,7 +2,7 @@
   "name": "pi-ide",
   "displayName": "Pi IDE Bridge",
   "description": "Serves editor context (selection, diagnostics, open editors) to Pi Coding Agent sessions over a loopback MCP socket.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "pi-coding-agent",
   "repository": {
     "type": "git",

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.1
+
+### Documentation
+
+- **README polish:** Reorganized documentation with a table of contents, an npm version badge, an explicit `License` section, and a configuration reference table describing each `~/.pi/agent/ide.json` field.
+
 ## 0.2.0
 
 ### Changed

@@ -1,10 +1,23 @@
 # pi-ide-integration
 
+[![npm version](https://img.shields.io/npm/v/pi-ide-integration?logo=npm)](https://www.npmjs.com/package/pi-ide-integration)
 [![license](https://img.shields.io/npm/l/pi-ide-integration)](LICENSE)
 
-Attach a live [Pi Coding Agent](https://pi.dev) session to VS Code, Cursor, Windsurf, or VSCodium.
+**pi-ide-integration** attaches a live [Pi Coding Agent](https://pi.dev) session to VS Code, Cursor, Windsurf, or another VS Code-family editor. It ships its own editor extension — **Pi IDE Bridge** — and installs it for you the first time you run `/ide`, so there's no marketplace step and no separate extension to keep in sync.
 
-The package ships its own editor extension — **Pi IDE Bridge** — and installs it for you the first time you run `/ide`. The bridge serves **every** client that connects, so several Pi sessions (or a Pi session and another agent) can watch the same window at once. Nothing gets disconnected when someone else attaches.
+The bridge serves **every** client that connects, so several Pi sessions (or a Pi session and another agent) can watch the same window at once. Nothing gets disconnected when someone else attaches.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [How attach works](#how-attach-works)
+- [The Pi IDE Bridge extension](#the-pi-ide-bridge-extension)
+- [Tools](#tools)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## Requirements
 
@@ -14,15 +27,19 @@ The package ships its own editor extension — **Pi IDE Bridge** — and install
 
 ## Install
 
-```bash
-# from a local checkout
-pi install /absolute/path/to/pi-ide-integration
+Install from npm:
 
-# from npm (after publish)
+```bash
 pi install npm:pi-ide-integration
 ```
 
-Restart Pi or run `/reload`. Keep this package always-on if you use `pi-lazy`.
+Or install a local checkout:
+
+```bash
+pi install /absolute/path/to/pi-ide-integration
+```
+
+Restart Pi (or run `/reload`) after installation. To update the npm package later, use `pi update npm:pi-ide-integration`. Keep this package always-on if you use `pi-lazy`.
 
 ## Quick start
 
@@ -54,7 +71,7 @@ Priority:
 
 1. `PI_IDE_PORT`
 2. Lockfiles in `~/.pi/ide/` whose `workspaceFolders` contain the Pi cwd (longest folder match wins)
-3. CLI fallback (`cursor` / `code` / `windsurf` / `codium`) for `open` and `diff` only
+3. CLI fallback (`cursor` / `code` / `windsurf` / `codium` / …) for `open` and `diff` only
 
 The WebSocket is `ws://127.0.0.1:<port>` with `x-pi-ide-authorization` from the lockfile. Non-loopback hosts are refused. Stale PIDs are ignored, and lockfiles from editor windows that are gone are pruned on activation.
 
@@ -75,14 +92,14 @@ Editor commands: **Pi: Show IDE Bridge Status**, **Pi: Restart IDE Bridge**. Set
 
 These are registered but **inactive until attached**.
 
-| Tool | When |
-| --- | --- |
-| `ide_open_file` | Websocket or CLI |
-| `ide_open_diff` | Websocket or CLI |
-| `ide_get_selection` | Websocket |
-| `ide_get_diagnostics` | Websocket |
-| `ide_get_open_editors` | Websocket |
-| `ide_get_workspace_folders` | Websocket |
+| Tool                        | When              |
+| ---------------------------- | ----------------- |
+| `ide_open_file`             | Websocket or CLI  |
+| `ide_open_diff`             | Websocket or CLI  |
+| `ide_get_selection`         | Websocket         |
+| `ide_get_diagnostics`       | Websocket         |
+| `ide_get_open_editors`      | Websocket         |
+| `ide_get_workspace_folders` | Websocket         |
 
 ## Configuration
 
@@ -99,14 +116,21 @@ These are registered but **inactive until attached**.
 }
 ```
 
-Set `autoInstall` to `false` to keep `/ide` from touching your editor; `/ide install` still works on demand.
+| Field               | Purpose                                                                   |
+| -------------------- | -------------------------------------------------------------------------- |
+| `autoAttach`        | Attach automatically on session start and keep polling for a match.      |
+| `autoInstall`       | Let `/ide` install the bridge into your editor on demand. Set to `false` to keep `/ide` from touching your editor; `/ide install` still works. |
+| `injectSelection`   | Include the live selection as context on the next model turn.            |
+| `maxSelectionChars` | Truncate injected selection text beyond this length.                     |
+| `extraLockDirs`     | Extra directories to scan for lockfiles, alongside `~/.pi/ide/`.          |
+| `pollIntervalMs`    | How often to retry attaching when no IDE has matched yet.                |
 
 If Pi starts before the editor, auto-attach keeps polling until a matching lockfile appears.
 
 ## Troubleshooting
 
 - **Installed, but nothing serves.** Some editor builds do not activate a freshly installed extension in the window that is already open. Reload the window, then `/ide attach`. `/ide install` reports this instead of claiming success.
-- **No editor CLI.** `/ide install` needs `cursor` / `code` / `windsurf` / `codium` on `PATH`. In VS Code: *Shell Command: Install 'code' command in PATH*.
+- **No editor CLI.** `/ide install` needs `cursor` / `code` / `windsurf` / `codium` (or another supported editor's CLI) on `PATH`. In VS Code: *Shell Command: Install 'code' command in PATH*.
 - **No attach, no footer.** Confirm a lockfile exists: `ls ~/.pi/ide`. Its `workspaceFolders` entry must contain your Pi cwd. `/ide attach` prints the last error. Check the **Pi IDE Bridge** output channel in the editor.
 - **Stale `PI_IDE_PORT`.** An old port in the environment wins over the lockfile scan. Unset it or restart the terminal.
 - **WSL / SSH remote.** The lockfile and port live where `pi` runs. Open the repo in the remote window so the bridge writes `~/.pi/ide` on that machine.
@@ -119,4 +143,8 @@ npm test
 npm run build     # bundles src/ and packages extension/ into dist/pi-ide.vsix
 ```
 
-See [AGENTS.md](AGENTS.md).
+The package declares its Pi extension in `package.json` under `pi.extensions`. See the [Pi package documentation](https://pi.dev/docs/latest/packages) for package installation, manifest, and gallery conventions. See [AGENTS.md](AGENTS.md) for architecture, constraints, and the release checklist.
+
+## License
+
+[MIT](LICENSE)

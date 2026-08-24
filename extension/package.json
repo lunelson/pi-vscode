@@ -1,0 +1,32 @@
+{
+  "name": "pi-ide",
+  "displayName": "Pi IDE Bridge",
+  "description": "Serves editor context (selection, diagnostics, open editors) to Pi Coding Agent sessions over a loopback MCP socket.",
+  "version": "0.2.0",
+  "publisher": "pi-coding-agent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rahularya01/pi-ide-integration.git"
+  },
+  "license": "MIT",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["AI", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "piIde.showStatus", "title": "Pi: Show IDE Bridge Status" },
+      { "command": "piIde.restart", "title": "Pi: Restart IDE Bridge" }
+    ],
+    "configuration": {
+      "title": "Pi IDE Bridge",
+      "properties": {
+        "piIde.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Serve editor context to Pi Coding Agent sessions."
+        }
+      }
+    }
+  }
+}

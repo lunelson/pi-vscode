@@ -1,0 +1,74 @@
+{
+  "name": "pi-ide-integration",
+  "version": "0.2.0",
+  "description": "Attach a live Pi session to VS Code-family IDEs via existing Claude-compatible lockfiles — no VS Code extension required.",
+  "author": "Rahul Arya",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "ide",
+    "vscode",
+    "cursor",
+    "windsurf"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rahularya01/pi-ide-integration.git"
+  },
+  "homepage": "https://github.com/Rahularya01/pi-ide-integration#readme",
+  "bugs": {
+    "url": "https://github.com/Rahularya01/pi-ide-integration/issues"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "dist"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --packages=external --external:@earendil-works/pi-coding-agent --external:typebox --external:@earendil-works/pi-tui --external:ws && npm run build:vsix",
+    "check": "npm run typecheck && npm run build && npm run test",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p extension/tsconfig.json",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:smoke": "node scripts/smoke.mjs",
+    "prepublishOnly": "npm run check && npm pack --dry-run",
+    "build:extension": "esbuild extension/src/extension.ts --bundle --platform=node --format=cjs --target=node18 --outfile=extension/dist/extension.js --external:vscode --external:bufferutil --external:utf-8-validate",
+    "build:vsix": "npm run build:extension && cd extension && vsce package --no-dependencies --out ../dist/pi-ide.vsix"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "dependencies": {
+    "typebox": "^1.0.17",
+    "ws": "^8.18.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.81.1"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@types/node": "^24.0.0",
+    "@types/vscode": "~1.85.0",
+    "@types/ws": "^8.18.1",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.12",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.0",
+    "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

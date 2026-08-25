@@ -40,7 +40,9 @@ npm run build
 
 ## Releases
 
-1. Update `package.json` version, `extension/package.json` version, and `CHANGELOG.md`.
+1. Update `package.json` version, `extension/package.json` version, and `CHANGELOG.md` (add a `## <version>` section — the release workflow lifts it verbatim into the GitHub release notes).
 2. Run `npm test` and verify the packed artifact imports from a clean temporary install.
 3. Confirm `dist/pi-ide.vsix` is present in `npm pack --dry-run` output.
-4. Commit, tag `v<version>`, and push `main` plus the tag.
+4. Commit, tag `v<version>`, and push `main` plus the tag. Pushing the tag triggers `.github/workflows/release.yml`, which reruns `npm run check`, verifies the tag matches `package.json`, publishes to npm, and creates the GitHub release — no manual `npm publish` needed.
+
+CI (`.github/workflows/ci.yml`) runs `npm run check` on every push and pull request against `main`. The release workflow needs an `NPM_TOKEN` repository secret (an npmjs.com automation token) with publish rights to `pi-ide-integration`.

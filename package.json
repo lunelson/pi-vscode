@@ -1,6 +1,6 @@
 {
   "name": "pi-ide-integration",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Attach a live Pi session to VS Code-family IDEs via existing Claude-compatible lockfiles — no VS Code extension required.",
   "author": "Rahul Arya",
   "license": "MIT",

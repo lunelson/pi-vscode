@@ -98,15 +98,22 @@ export function formatIdeContext(selection: IdeSelection | undefined, mentions: 
 	);
 }
 
-/** Compact `file.ts:12-27` label for the footer status bar. */
+/**
+ * Compact footer label. A bare cursor (no highlighted text) gets just the
+ * filename — `file.ts:12-27` only appears once there is an actual selection,
+ * so the footer doesn't imply a range is active on every cursor move.
+ */
 export function formatSelectionStatus(selection: IdeSelection | undefined): string | undefined {
-	const first = selection?.ranges[0];
-	if (!selection || !first) return undefined;
+	if (!selection) return undefined;
+	const fileName = basename(selection.filePath);
+	const highlighted = selection.ranges.filter((range) => range.text.length > 0);
+	const first = highlighted[0];
+	if (!first) return fileName;
 	const start = first.selection.start.line + 1;
 	const end = first.selection.end.line + 1;
 	const span = start === end ? `${start}` : `${start}-${end}`;
-	const extra = selection.ranges.length > 1 ? ` +${selection.ranges.length - 1}` : "";
-	return `${basename(selection.filePath)}:${span}${extra}`;
+	const extra = highlighted.length > 1 ? ` +${highlighted.length - 1}` : "";
+	return `${fileName}:${span}${extra}`;
 }
 
 export function selectionKey(selection: IdeSelection | undefined): string {

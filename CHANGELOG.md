@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.2
+
+### Fixed
+
+- The footer status bar showed a line number (`IDE Cursor · file.ts:12`) on every bare cursor move, implying a selection was active when nothing was actually highlighted. It now shows just the filename until there is a real selection, matching the prompt-injected IDE context, which already made this distinction.
+
 ## 0.2.1
 
 ### Documentation

@@ -80,6 +80,16 @@ test("formatSelectionStatus renders a compact footer label", () => {
 				{ text: "", selection: { start: { line: 9, character: 0 }, end: { line: 9, character: 1 } } },
 			],
 		}),
-		"a.ts:5 +1",
+		"a.ts",
+	);
+	assert.equal(
+		formatSelectionStatus({
+			filePath: "/repo/a.ts",
+			ranges: [
+				{ text: "", selection: { start: { line: 4, character: 2 }, end: { line: 4, character: 2 } } },
+				{ text: "y", selection: { start: { line: 9, character: 0 }, end: { line: 9, character: 1 } } },
+			],
+		}),
+		"a.ts:10",
 	);
 });

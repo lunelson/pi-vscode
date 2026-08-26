@@ -3,9 +3,9 @@
 [![npm version](https://img.shields.io/npm/v/pi-ide-integration?logo=npm)](https://www.npmjs.com/package/pi-ide-integration)
 [![license](https://img.shields.io/npm/l/pi-ide-integration)](LICENSE)
 
-**pi-ide-integration** attaches a live [Pi Coding Agent](https://pi.dev) session to VS Code, Cursor, Windsurf, or another VS Code-family editor. It ships its own editor extension — **Pi IDE Bridge** — and installs it for you the first time you run `/ide`, so there's no marketplace step and no separate extension to keep in sync.
+**pi-ide-integration** attaches a live [Pi Coding Agent](https://pi.dev) session to VS Code, Cursor, Windsurf, or any other VS Code-family editor, giving Pi visibility into what you're actually looking at — the open files, the current selection, live diagnostics — instead of working blind. It ships its own editor extension, **Pi IDE Bridge**, and installs it for you the first time you run `/ide`. There's no marketplace listing to find and no separate extension to keep in sync with the package version.
 
-The bridge serves **every** client that connects, so several Pi sessions (or a Pi session and another agent) can watch the same window at once. Nothing gets disconnected when someone else attaches.
+The bridge serves **every** client that connects, so several Pi sessions — or a Pi session alongside another agent — can watch the same window at once. Attaching a second client never disconnects the first.
 
 ## Contents
 
@@ -18,6 +18,7 @@ The bridge serves **every** client that connects, so several Pi sessions (or a P
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [License](#license)
 
 ## Requirements
 
@@ -67,13 +68,13 @@ Manual control:
 
 ## How attach works
 
-Priority:
+Attaching means finding the right editor window and opening a websocket to it. The bridge tries three things, in order, and stops at the first that works:
 
-1. `PI_IDE_PORT`
-2. Lockfiles in `~/.pi/ide/` whose `workspaceFolders` contain the Pi cwd (longest folder match wins)
-3. CLI fallback (`cursor` / `code` / `windsurf` / `codium` / …) for `open` and `diff` only
+1. **`PI_IDE_PORT`** — if set, connect there directly.
+2. **Lockfile scan** — look through `~/.pi/ide/` for a lockfile whose `workspaceFolders` contain the Pi session's cwd. If several match, the longest (most specific) folder path wins.
+3. **CLI fallback** — if nothing matches, fall back to the editor's CLI (`cursor` / `code` / `windsurf` / `codium` / …). This only covers `open` and `diff`; everything else needs a real attach.
 
-The WebSocket is `ws://127.0.0.1:<port>` with `x-pi-ide-authorization` from the lockfile. Non-loopback hosts are refused. Stale PIDs are ignored, and lockfiles from editor windows that are gone are pruned on activation.
+Once a lockfile is found, the bridge connects to `ws://127.0.0.1:<port>` and authenticates with the `x-pi-ide-authorization` token stored in that lockfile. Connections to any host other than loopback are refused outright. On activation, the bridge also cleans house: lockfiles left behind by a process whose PID is no longer running, or by an editor window that has since closed, are pruned before the scan runs.
 
 ## The Pi IDE Bridge extension
 
@@ -92,14 +93,16 @@ Editor commands: **Pi: Show IDE Bridge Status**, **Pi: Restart IDE Bridge**. Set
 
 These are registered but **inactive until attached**.
 
-| Tool                        | When              |
-| ---------------------------- | ----------------- |
-| `ide_open_file`             | Websocket or CLI  |
-| `ide_open_diff`             | Websocket or CLI  |
-| `ide_get_selection`         | Websocket         |
-| `ide_get_diagnostics`       | Websocket         |
-| `ide_get_open_editors`      | Websocket         |
-| `ide_get_workspace_folders` | Websocket         |
+| Tool                         | Description                                                    | When              |
+| ---------------------------- | ---------------------------------------------------------------- | ----------------- |
+| `ide_open_file`              | Open a file in the attached IDE, optionally revealing a line.  | Websocket or CLI  |
+| `ide_open_diff`              | Show a proposed file change as a diff tab in the attached IDE. | Websocket or CLI  |
+| `ide_get_selection`          | Get the current or latest text selection from the attached IDE.| Websocket         |
+| `ide_get_diagnostics`        | Get LSP / linter diagnostics from the attached IDE.             | Websocket         |
+| `ide_get_open_editors`       | List files currently open in the attached IDE.                 | Websocket         |
+| `ide_get_workspace_folders`  | List workspace folders open in the attached IDE.                | Websocket         |
+
+"CLI" means these fall back to the editor CLI (`open` / `diff`) when no websocket is attached; the rest need an active attach.
 
 ## Configuration
 

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.2.3
+
+### Security
+
+- Republish from restored `main` after an unauthorized force-push on 2026-08-27 rewrote this repository's default branch. npm `0.2.2` was published on 2026-08-25, before that rewrite. Install from npm or this tag, not from a clone taken during the incident.
+
+### Changed
+
+- Run GitHub Actions on Node 22 so CI/release can import `@earendil-works/pi-coding-agent` (`fs.globSync` is not available on Node 20).
+
 ## 0.2.2
 
 ### Fixed

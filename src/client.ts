@@ -130,7 +130,7 @@ export class IdeClient {
 		const result = await this.request("initialize", {
 			protocolVersion: PROTOCOL_VERSION,
 			capabilities: {},
-			clientInfo: { name: "pi-ide-integration", version: "0.1.0" },
+			clientInfo: { name: "pi-vscode", version: "0.1.0" },
 		});
 		this.server = parseServerInfo(result);
 		this.notify("notifications/initialized");

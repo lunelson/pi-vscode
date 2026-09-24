@@ -1,12 +1,12 @@
 {
-  "name": "pi-ide",
+  "name": "pi-vscode-bridge",
   "displayName": "Pi IDE Bridge",
   "description": "Serves editor context (selection, diagnostics, open editors) to Pi Coding Agent sessions over a loopback MCP socket.",
-  "version": "0.2.2",
-  "publisher": "pi-coding-agent",
+  "version": "0.3.0",
+  "publisher": "lunelson",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Rahularya01/pi-ide-integration.git"
+    "url": "https://github.com/lunelson/pi-vscode.git"
   },
   "license": "MIT",
   "engines": { "vscode": "^1.85.0" },

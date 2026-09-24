@@ -14,7 +14,7 @@ try {
 		`process.env.PI_CODING_AGENT_DIR=${JSON.stringify(agentDir)};`,
 		`const mod=await import(${JSON.stringify(join(root, "dist/index.js"))});`,
 		`if(typeof mod.default!=="function") throw new Error("default extension factory missing");`,
-		`console.log("pi-ide-integration ${expectedVersion} artifact import OK");`,
+		`console.log("@lunelson/pi-vscode ${expectedVersion} artifact import OK");`,
 	].join("");
 	const result = spawnSync(process.execPath, ["--input-type=module", "--eval", script], {
 		cwd: root,

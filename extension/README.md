@@ -4,7 +4,7 @@ Serves editor context to [Pi Coding Agent](https://pi.dev) sessions: the live se
 
 The bridge listens on loopback only, on a random port, and advertises itself in `~/.pi/ide/<port>.lock` with a per-window token. Every authenticated client is served — connecting never disconnects anyone else, so several agents can watch the same window at once.
 
-Installed automatically by the `pi-ide-integration` package; you do not normally install it by hand.
+Bundled with the `@lunelson/pi-vscode` package and installed by its `/ide install` command.
 
 ## Commands
 

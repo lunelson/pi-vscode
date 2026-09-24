@@ -1,7 +1,7 @@
 {
-  "name": "pi-ide-integration",
-  "version": "0.2.3",
-  "description": "Attach a live Pi session to VS Code-family IDEs via existing Claude-compatible lockfiles — no VS Code extension required.",
+  "name": "@lunelson/pi-vscode",
+  "version": "0.3.0",
+  "description": "Attach a live Pi session to VS Code: editor selection as a cache-friendly prompt section, diagnostics, and open-editor tools, via a bundled bridge extension.",
   "author": "Rahul Arya",
   "license": "MIT",
   "type": "module",
@@ -16,11 +16,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Rahularya01/pi-ide-integration.git"
+    "url": "git+https://github.com/lunelson/pi-vscode.git"
   },
-  "homepage": "https://github.com/Rahularya01/pi-ide-integration#readme",
+  "homepage": "https://github.com/lunelson/pi-vscode#readme",
   "bugs": {
-    "url": "https://github.com/Rahularya01/pi-ide-integration/issues"
+    "url": "https://github.com/lunelson/pi-vscode/issues"
   },
   "files": [
     "LICENSE",
@@ -55,7 +55,7 @@
     "ws": "^8.18.3"
   },
   "peerDependencies": {
-		"@earendil-works/pi-coding-agent": ">=0.86.0"
+    "@earendil-works/pi-coding-agent": ">=0.86.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.87.1",

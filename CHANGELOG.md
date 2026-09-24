@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.0
+
+First release of the `@lunelson/pi-vscode` fork.
+
+### Changed
+
+- **Editor context is a prompt section.** The live selection is sent as a named `ide_context` system prompt section instead of a forced whole-prompt replacement. Pi appends a section patch only when the selection changes, which keeps the cached prompt prefix on providers with mid-conversation system messages. One-off @-mentions missing from the submitted prompt go in a hidden message. Requires Pi 0.86+.
+- **Installs target one editor.** New `editorCli` setting (default `code`) picks the editor for `/ide install` and for `/ide attach` without a lockfile, instead of the first VS Code-family CLI on `PATH`.
+- **Installs are opt-in.** `autoInstall` defaults to `false`, and only `/ide attach` may install implicitly. `/ide status` is read-only.
+- **Ties are not guessed.** When several windows match the working directory equally, auto-attach reports the tie in the footer and waits for `/ide attach`. An explicit choice is remembered for automatic reconnects.
+- Renamed the package to `@lunelson/pi-vscode` and the bundled editor extension to `lunelson.pi-vscode-bridge`.
+
 ## 0.2.3
 
 ### Security

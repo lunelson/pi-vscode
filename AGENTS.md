@@ -1,6 +1,6 @@
-# pi-ide-integration
+# pi-vscode
 
-Pi package that attaches a live Pi session to a VS Code-family IDE. It ships its own editor extension (`extension/`), installs it through the editor CLI, and connects to it over a loopback WebSocket.
+Fork of `pi-ide-integration` (upstream remote: `Rahularya01/pi-ide-integration`). Pi package that attaches a live Pi session to a VS Code-family IDE. It ships its own editor extension (`extension/`), installs it through the editor CLI, and connects to it over a loopback WebSocket.
 
 ## Development
 
@@ -34,6 +34,8 @@ npm run build
 - Do not start sockets, polls, or watchers from the extension factory. Start on `session_start`, stop on `session_shutdown`.
 - Never write a session file from a second `pi --mode rpc` process.
 - Keep IDE tools inactive unless a session is attached.
+- Send editor state only through the `ide_context` section on `systemPromptOptions.sections`. Never return `systemPrompt` from `before_agent_start`: it replaces the whole prompt and defeats prefix caching. Section text must depend only on editor state, because any per-turn variation appends a patch on every prompt.
+- Automatic attach must not choose between windows tied for the most specific workspace folder.
 - Installing into the editor is a side effect: it happens on an explicit `/ide` command, never at session start, and `autoInstall: false` must disable it.
 - `extension/src` is authored as CommonJS because VS Code requires a CJS entry point; the root sources are ESM.
 - Tests must not touch the real `~/.pi/agent` or `~/.pi/ide` directories.
@@ -45,4 +47,4 @@ npm run build
 3. Confirm `dist/pi-ide.vsix` is present in `npm pack --dry-run` output.
 4. Commit, tag `v<version>`, and push `main` plus the tag. Pushing the tag triggers `.github/workflows/release.yml`, which reruns `npm run check`, verifies the tag matches `package.json`, publishes to npm, and creates the GitHub release — no manual `npm publish` needed.
 
-CI (`.github/workflows/ci.yml`) runs `npm run check` on every push and pull request against `main`. The release workflow needs an `NPM_TOKEN` repository secret (an npmjs.com automation token) with publish rights to `pi-ide-integration`.
+CI (`.github/workflows/ci.yml`) runs `npm run check` on every push and pull request against `main`. The release workflow needs an `NPM_TOKEN` repository secret (an npmjs.com automation token) with publish rights to `@lunelson/pi-vscode`; without it, tag pushes fail at the publish step.

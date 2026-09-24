@@ -7,7 +7,7 @@ import { listMatchingLocks } from "./discover.ts";
 import type { CliFallback } from "./types.ts";
 
 const VSIX_NAME = "pi-ide.vsix";
-const EXTENSION_ID = "pi-coding-agent.pi-ide";
+const EXTENSION_ID = "lunelson.pi-vscode-bridge";
 const INSTALL_TIMEOUT_MS = 120_000;
 
 export type InstallOutcome = {

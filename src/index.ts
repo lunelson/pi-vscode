@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { IdeClient } from "./client.ts";
-import { detectCliFallback, diffInIde, openInIde } from "./cli-fallback.ts";
+import { detectCliFallback, diffInIde, openInIde, resolveEditorCli } from "./cli-fallback.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import {
 	IDE_CONTEXT_SECTION,
@@ -137,8 +137,8 @@ export default function piIdeIntegration(pi: ExtensionAPI) {
 				return;
 			}
 
-			// Any other verb needs a bridge to talk to, so put one there first.
-			if (verb !== "detach" && verb !== "auto") await ensureBridge(runtime, ctx.ui);
+			// Status stays read-only; only an explicit attach may put a bridge in the editor.
+			if (verb === "attach") await ensureBridge(runtime, ctx.ui);
 
 			if (!verb || verb === "status") {
 				ctx.ui.notify(statusText(runtime), runtime.client ? "info" : "warning");
@@ -369,7 +369,9 @@ async function installCommand(
 	if (!options.force && listConnections(runtime.cwd, runtime.config.extraLockDirs).length > 0) return true;
 
 	ui.notify("Installing the Pi IDE Bridge extension…", "info");
-	const outcome = await installBridge(runtime.cwd, runtime.config.extraLockDirs);
+	const outcome = await installBridge(runtime.cwd, runtime.config.extraLockDirs, {
+		editorCli: runtime.config.editorCli,
+	});
 	if (!outcome.installed) {
 		runtime.lastError = outcome.message;
 		ui.notify(outcome.message, "error");
@@ -445,7 +447,11 @@ async function attachCli(
 	runtime: Runtime,
 	options: { requireIdeEnv: boolean },
 ): Promise<boolean> {
-	const cli = detectCliFallback(process.env, options);
+	// Automatic fallback trusts only the terminal's own editor; an explicit attach uses the configured one.
+	const cli =
+		!options.requireIdeEnv && runtime.config.editorCli
+			? resolveEditorCli(runtime.config.editorCli, process.env)
+			: detectCliFallback(process.env, options);
 	if (!cli) {
 		setIdeTools(pi, []);
 		refreshStatus(runtime);

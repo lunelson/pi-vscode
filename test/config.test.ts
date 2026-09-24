@@ -17,3 +17,14 @@ test("normalizeConfig fills defaults and keeps safe values", () => {
 	assert.equal(parsed.pollIntervalMs, DEFAULT_CONFIG.pollIntervalMs);
 	assert.deepEqual(parsed.extraLockDirs, ["/tmp/ide"]);
 });
+
+test("normalizeConfig keeps installs opt-in and targets VS Code by default", () => {
+	assert.equal(DEFAULT_CONFIG.autoInstall, false);
+	assert.equal(normalizeConfig({ autoInstall: "yes" }).autoInstall, false);
+	assert.equal(normalizeConfig({ autoInstall: true }).autoInstall, true);
+
+	assert.equal(normalizeConfig({}).editorCli, "code");
+	assert.equal(normalizeConfig({ editorCli: " cursor " }).editorCli, "cursor");
+	assert.equal(normalizeConfig({ editorCli: "" }).editorCli, undefined, "empty string opts into env detection");
+	assert.equal(normalizeConfig({ editorCli: 3 }).editorCli, "code");
+});

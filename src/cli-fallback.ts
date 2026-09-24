@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import type { CliFallback, IdeFamily } from "./types.ts";
 
 const CANDIDATES: Array<{ family: IdeFamily; bin: string; label: string; hints: string[] }> = [
@@ -70,6 +70,15 @@ export function detectCliFallback(
 		return { family: candidate.family, bin: resolved, label: candidate.label };
 	}
 	return undefined;
+}
+
+/** Resolve one named editor CLI (bare name or path) without falling back to any other editor. */
+export function resolveEditorCli(bin: string, env: NodeJS.ProcessEnv = process.env): CliFallback | undefined {
+	const resolved = which(bin, env);
+	if (!resolved) return undefined;
+	const name = basename(bin);
+	const known = CANDIDATES.find((candidate) => candidate.bin === name);
+	return known ? { family: known.family, bin: resolved, label: known.label } : { family: "unknown", bin: resolved, label: name };
 }
 
 export function which(bin: string, env: NodeJS.ProcessEnv = process.env): string | undefined {

@@ -5,7 +5,8 @@ import type { IdeConfig } from "./types.ts";
 
 export const DEFAULT_CONFIG: IdeConfig = {
 	autoAttach: true,
-	autoInstall: true,
+	autoInstall: false,
+	editorCli: "code",
 	injectSelection: true,
 	maxSelectionChars: 4000,
 	extraLockDirs: [],
@@ -34,7 +35,8 @@ export function loadConfig(): IdeConfig {
 export function saveConfig(config: IdeConfig): void {
 	const path = getIdeConfigPath();
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+	const stored = { ...config, editorCli: config.editorCli ?? "" };
+	writeFileSync(path, `${JSON.stringify(stored, null, 2)}\n`, "utf8");
 }
 
 export function normalizeConfig(raw: Record<string, unknown>): IdeConfig {
@@ -52,9 +54,14 @@ export function normalizeConfig(raw: Record<string, unknown>): IdeConfig {
 			? Math.floor(raw.pollIntervalMs)
 			: DEFAULT_CONFIG.pollIntervalMs;
 
+	// An empty string opts back into environment detection; a missing key keeps the default.
+	const editorCli =
+		typeof raw.editorCli === "string" ? raw.editorCli.trim() || undefined : DEFAULT_CONFIG.editorCli;
+
 	return {
 		autoAttach: raw.autoAttach !== false,
-		autoInstall: raw.autoInstall !== false,
+		autoInstall: raw.autoInstall === true,
+		editorCli,
 		injectSelection: raw.injectSelection !== false,
 		maxSelectionChars,
 		extraLockDirs,

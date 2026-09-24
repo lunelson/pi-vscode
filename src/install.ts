@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { detectCliFallback, which } from "./cli-fallback.ts";
+import { detectCliFallback, resolveEditorCli, which } from "./cli-fallback.ts";
 import { listMatchingLocks } from "./discover.ts";
 import type { CliFallback } from "./types.ts";
 
@@ -34,23 +34,28 @@ export function isBridgeInstalled(editor: CliFallback): Promise<boolean> {
 }
 
 /**
- * Install the bridge into the editor this Pi session was launched from, then
- * wait for it to publish a lockfile. The extension activates in the running
- * window on most builds; when it does not, the caller tells the user to reload
- * rather than reporting a success that is not there yet.
+ * Install the bridge into the configured editor (or, without one, the editor
+ * this Pi session was launched from), then wait for it to publish a lockfile.
+ * The extension activates in the running window on most builds; when it does
+ * not, the caller tells the user to reload rather than reporting a success
+ * that is not there yet.
  */
 export async function installBridge(
 	cwd: string,
 	extraLockDirs: string[] = [],
-	options: { waitMs?: number } = {},
+	options: { waitMs?: number; editorCli?: string } = {},
 ): Promise<InstallOutcome> {
-	const editor = detectCliFallback(process.env, { requireIdeEnv: false });
+	const editor = options.editorCli
+		? resolveEditorCli(options.editorCli, process.env)
+		: detectCliFallback(process.env, { requireIdeEnv: false });
 	if (!editor) {
 		return {
 			installed: false,
 			serving: false,
 			editor: undefined,
-			message: "No cursor / code / windsurf / codium CLI on PATH, so the Pi IDE Bridge cannot be installed.",
+			message: options.editorCli
+				? `The configured editorCli "${options.editorCli}" is not on PATH, so the Pi IDE Bridge cannot be installed.`
+				: "No cursor / code / windsurf / codium CLI on PATH, so the Pi IDE Bridge cannot be installed.",
 		};
 	}
 	if (!which(editor.bin, process.env)) {

@@ -84,6 +84,11 @@ export type IdeConfig = {
 	autoAttach: boolean;
 	/** Install the Pi IDE Bridge extension automatically when it is missing. */
 	autoInstall: boolean;
+	/**
+	 * Editor CLI (name or path) that installs the bridge and opens files when no lockfile
+	 * matched. Undefined means detect from the terminal environment, then PATH order.
+	 */
+	editorCli: string | undefined;
 	injectSelection: boolean;
 	maxSelectionChars: number;
 	extraLockDirs: string[];

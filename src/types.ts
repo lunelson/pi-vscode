@@ -60,6 +60,8 @@ export type IdeConnection = {
 	workspaceFolders: string[];
 	source: string;
 	transport: IdeTransport;
+	/** Length of the workspace folder containing the cwd; undefined for `PI_IDE_PORT`. */
+	matchLength?: number;
 };
 
 export type IdeServerInfo = {

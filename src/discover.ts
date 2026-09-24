@@ -157,10 +157,23 @@ export function listConnections(cwd: string, extraLockDirs: string[] = [], env: 
 
 	for (const lock of listMatchingLocks(cwd, extraLockDirs)) {
 		if (seen.has(lock.port)) continue;
-		connections.push(lockToConnection(lock, `lock:${lock.port}`));
+		connections.push({ ...lockToConnection(lock, `lock:${lock.port}`), matchLength: rankLock(lock, cwd) });
 		seen.add(lock.port);
 	}
 	return connections;
+}
+
+/**
+ * The connections an automatic attach could justify: `PI_IDE_PORT` alone, or every
+ * lockfile tied for the most specific workspace match. More than one means several
+ * windows have this folder open, and choosing by recency would silently attach to
+ * whichever editor was touched last.
+ */
+export function bestConnections(connections: IdeConnection[]): IdeConnection[] {
+	const [first] = connections;
+	if (!first) return [];
+	if (first.matchLength === undefined) return [first];
+	return connections.filter((connection) => connection.matchLength === first.matchLength);
 }
 
 export function connectionLabel(connection: IdeConnection): string {

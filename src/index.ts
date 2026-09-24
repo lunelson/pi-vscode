@@ -11,7 +11,7 @@ import {
 	formatMentions,
 	formatSelectionStatus,
 } from "./context.ts";
-import { connectionLabel, listConnections } from "./discover.ts";
+import { bestConnections, connectionLabel, listConnections } from "./discover.ts";
 import { installBridge, isBridgeInstalled } from "./install.ts";
 import type { CliFallback, IdeConfig, IdeConnection, IdeMention, IdeSelection } from "./types.ts";
 
@@ -53,6 +53,10 @@ type Runtime = {
 	contendedStreak: number;
 	backoffUntil: number;
 	contendedNotified: boolean;
+	/** Port chosen explicitly with /ide attach; automatic reattach goes back to it. */
+	pinnedPort?: number;
+	/** Windows tied for the best workspace match, which automatic attach refuses to choose between. */
+	ambiguous?: IdeConnection[];
 };
 
 export default function piIdeIntegration(pi: ExtensionAPI) {
@@ -202,6 +206,8 @@ export default function piIdeIntegration(pi: ExtensionAPI) {
 
 				try {
 					await attachConnection(pi, runtime, chosen);
+					runtime.pinnedPort = chosen.port;
+					runtime.ambiguous = undefined;
 					ctx.ui.notify(`Attached to ${runtime.client?.connection.ideName ?? "IDE"}`, "info");
 				} catch (error) {
 					ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
@@ -385,7 +391,20 @@ async function installCommand(
 async function attachBest(pi: ExtensionAPI, runtime: Runtime, options: { quiet: boolean }): Promise<boolean> {
 	if (runtime.client?.connected) return true;
 	const connections = listConnections(runtime.cwd, runtime.config.extraLockDirs);
-	for (const connection of connections) {
+	const pinned = connections.find((connection) => connection.port === runtime.pinnedPort);
+	const candidates = pinned ? [pinned] : bestConnections(connections);
+	if (candidates.length > 1) {
+		const alreadyReported = runtime.ambiguous !== undefined;
+		runtime.ambiguous = candidates;
+		runtime.lastError = `${candidates.length} IDE windows match this folder equally (${candidates
+			.map((connection) => connectionLabel(connection))
+			.join("; ")}). Run /ide attach to pick one.`;
+		if (!options.quiet || !alreadyReported) runtime.ui?.notify(runtime.lastError, "warning");
+		refreshStatus(runtime);
+		return false;
+	}
+	runtime.ambiguous = undefined;
+	for (const connection of candidates) {
 		try {
 			await attachConnection(pi, runtime, connection);
 			if (!options.quiet) runtime.ui?.notify(`Attached to ${connection.ideName ?? "IDE"}`, "info");
@@ -470,6 +489,8 @@ async function detach(pi: ExtensionAPI, runtime: Runtime): Promise<void> {
 	runtime.cli = undefined;
 	runtime.selection = undefined;
 	runtime.mentions = [];
+	runtime.pinnedPort = undefined;
+	runtime.ambiguous = undefined;
 	runtime.contendedStreak = 0;
 	runtime.backoffUntil = 0;
 	runtime.contendedNotified = false;
@@ -519,6 +540,10 @@ function refreshStatus(runtime: Runtime): void {
 	}
 	if (runtime.cli) {
 		runtime.ui.setStatus("ide", `IDE ${runtime.cli.label} (cli)`);
+		return;
+	}
+	if (runtime.ambiguous) {
+		runtime.ui.setStatus("ide", `IDE ? ${runtime.ambiguous.length} windows · /ide attach`);
 		return;
 	}
 	runtime.ui.setStatus("ide", undefined);

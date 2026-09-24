@@ -1,16 +1,7 @@
-# Pi IDE Bridge
+# Pi VS Code Bridge
 
-Serves editor context to [Pi Coding Agent](https://pi.dev) sessions: the live selection, diagnostics, open editors, and workspace folders, plus `openFile` / `openDiff` / `saveDocument` actions.
+Serves this window's selection, diagnostics, and open editors to [Pi](https://pi.dev) sessions.
 
-The bridge listens on loopback only, on a random port, and advertises itself in `~/.pi/ide/<port>.lock` with a per-window token. Every authenticated client is served — connecting never disconnects anyone else, so several agents can watch the same window at once.
+It listens on a random loopback port and advertises it in `~/.pi/ide/<port>.lock` with a per-window token, readable only by you. Connections without the token are refused before the WebSocket upgrade. Every authenticated client is served, so several Pi sessions can share one window.
 
-Bundled with the `@lunelson/pi-vscode` package and installed by its `/ide install` command.
-
-## Commands
-
-- **Pi: Show IDE Bridge Status** — port and connected client count
-- **Pi: Restart IDE Bridge**
-
-## Settings
-
-- `piIde.enabled` (default `true`) — serve editor context to Pi sessions
+Built and installed from the [pi-vscode](https://github.com/lunelson/pi-vscode) checkout with `npm run install:vscode`. It has no commands or settings.

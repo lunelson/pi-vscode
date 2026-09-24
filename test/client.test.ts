@@ -1,174 +1,107 @@
 import assert from "node:assert/strict";
-import type { AddressInfo } from "node:net";
 import { once } from "node:events";
+import { createServer, type IncomingMessage } from "node:http";
+import type { AddressInfo, Socket } from "node:net";
 import { test } from "node:test";
-import { WebSocketServer, type WebSocket } from "ws";
-import { formatToolResult, IdeClient } from "../src/client.ts";
-import type { IdeConnection, IdeSelection } from "../src/types.ts";
+import { WebSocketServer } from "ws";
+import { IdeClient, type IdeClientHandlers } from "../src/client.ts";
+import type { IdeWindow } from "../src/discover.ts";
+import { AUTH_HEADER } from "../src/protocol.ts";
 
-test("formatToolResult unwraps MCP content arrays", () => {
-	assert.equal(formatToolResult({ content: [{ type: "text", text: "FILE_SAVED" }] }), "FILE_SAVED");
-	assert.equal(formatToolResult("ok"), "ok");
+const window = (port: number, authToken = "secret"): IdeWindow => ({
+	pid: process.pid,
+	port,
+	ideName: "Visual Studio Code",
+	workspaceFolders: ["/repo"],
+	authToken,
+	matchLength: 5,
 });
 
-test("IdeClient handshakes, receives selection, and calls tools", async () => {
-	const token = "test-token";
-	const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
-	await once(wss, "listening");
-	const port = (wss.address() as AddressInfo).port;
+const noHandlers: IdeClientHandlers = { onSelection: () => {}, onClose: () => {} };
 
-	wss.on("connection", (socket: WebSocket, request) => {
-		assert.equal(request.headers["x-pi-ide-authorization"], token);
+/** A bridge double that authenticates like the real one: before the upgrade. */
+const startBridge = async (respond: (method: string, params: unknown) => { result?: unknown; error?: unknown } | undefined) => {
+	const wss = new WebSocketServer({
+		host: "127.0.0.1",
+		port: 0,
+		verifyClient: ({ req }: { req: IncomingMessage }) => req.headers[AUTH_HEADER] === "secret",
+	});
+	await once(wss, "listening");
+	wss.on("connection", (socket) => {
 		socket.on("message", (data) => {
-			const message = JSON.parse(String(data)) as {
-				id?: number;
-				method?: string;
-				params?: { name?: string };
-			};
-			if (message.method === "initialize") {
-				socket.send(
-					JSON.stringify({
-						jsonrpc: "2.0",
-						id: message.id,
-						result: {
-							protocolVersion: "2025-11-25",
-							serverInfo: { name: "Cursor", version: "test" },
-						},
-					}),
-				);
-				return;
-			}
-			if (message.method === "tools/list") {
-				socket.send(
-					JSON.stringify({
-						jsonrpc: "2.0",
-						id: message.id,
-						result: { tools: [{ name: "openFile" }, { name: "getCurrentSelection" }] },
-					}),
-				);
-				return;
-			}
-			if (message.method === "tools/call" && message.params?.name === "openFile") {
-				socket.send(
-					JSON.stringify({
-						jsonrpc: "2.0",
-						id: message.id,
-						result: { content: [{ type: "text", text: "Opened file: /tmp/a.ts" }] },
-					}),
-				);
-			}
+			const { id, method, params } = JSON.parse(String(data)) as { id: number; method: string; params: unknown };
+			const reply = respond(method, params);
+			if (reply) socket.send(JSON.stringify({ jsonrpc: "2.0", id, ...reply }));
 		});
 	});
+	const close = () =>
+		new Promise<void>((resolve) => {
+			for (const client of wss.clients) client.terminate();
+			wss.close(() => resolve());
+		});
+	return { wss, port: (wss.address() as AddressInfo).port, close };
+};
 
-	const connection: IdeConnection = {
-		url: `ws://127.0.0.1:${port}`,
-		host: "127.0.0.1",
-		port,
-		authToken: token,
-		ideName: "Cursor",
-		workspaceFolders: ["/tmp"],
-		source: `test:${port}`,
-		transport: "ws",
-	};
-
-	const selections: IdeSelection[] = [];
-	const client = await IdeClient.connect(connection, {
-		onSelection: (selection) => selections.push(selection),
+test("requests round-trip and selection notifications reach the handler", async () => {
+	const bridge = await startBridge((method, params) => ({ result: { method, params } }));
+	const selections: unknown[] = [];
+	const client = await IdeClient.connect(window(bridge.port), { ...noHandlers, onSelection: (params) => selections.push(params) });
+	assert.equal(client.connected, true);
+	assert.deepEqual(await client.request("getDiagnostics", { filePath: "/repo/a.ts" }), {
+		method: "getDiagnostics",
+		params: { filePath: "/repo/a.ts" },
 	});
 
-	assert.equal(client.connected, true);
-	assert.equal(client.server?.name, "Cursor");
-	assert.equal(client.hasTool("openFile"), true);
-	assert.equal(await client.callTool("openFile", { filePath: "/tmp/a.ts" }), "Opened file: /tmp/a.ts");
-
-	const sockets = [...wss.clients];
-	sockets[0]?.send(
-		JSON.stringify({
-			jsonrpc: "2.0",
-			method: "selection_changed",
-			params: {
-				filePath: "/tmp/a.ts",
-				text: "export const x = 1",
-				selection: { start: { line: 0, character: 0 }, end: { line: 0, character: 18 } },
-			},
-		}),
-	);
-
-	await new Promise((resolve) => setTimeout(resolve, 25));
-	assert.equal(selections[0]?.filePath, "/tmp/a.ts");
+	for (const socket of bridge.wss.clients) socket.send(JSON.stringify({ jsonrpc: "2.0", method: "selection_changed", params: { x: 1 } }));
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	assert.deepEqual(selections, [{ x: 1 }]);
 
 	client.dispose();
-	await new Promise<void>((resolve, reject) => {
-		wss.close((error) => (error ? reject(error) : resolve()));
-	});
+	assert.equal(client.connected, false);
+	await assert.rejects(client.request("getOpenEditors"), /not connected/);
+	await bridge.close();
 });
 
-test("IdeClient refuses a non-loopback host", async () => {
-	await assert.rejects(
-		() =>
-			IdeClient.connect({
-				url: "ws://192.168.1.4:9",
-				host: "192.168.1.4",
-				port: 9,
-				source: "test",
-				workspaceFolders: [],
-				transport: "ws",
-			}),
-		/loopback/,
-	);
+test("a JSON-RPC error rejects the request", async () => {
+	const bridge = await startBridge(() => ({ error: { code: -32000, message: "filePath must be absolute: a.ts" } }));
+	const client = await IdeClient.connect(window(bridge.port), noHandlers);
+	await assert.rejects(client.request("getDiagnostics", { filePath: "a.ts" }), /filePath must be absolute/);
+	client.dispose();
+	await bridge.close();
 });
 
-test("IdeClient reports a tiny uptime when the IDE hands its single slot to another client", async () => {
-	const token = "test-token";
-	const wss = new WebSocketServer({ host: "127.0.0.1", port: 0 });
-	await once(wss, "listening");
-	const port = (wss.address() as AddressInfo).port;
+test("a wrong token is refused before the upgrade", async () => {
+	const bridge = await startBridge(() => ({ result: null }));
+	await assert.rejects(IdeClient.connect(window(bridge.port, "wrong"), noHandlers), /refused the connection \(HTTP 401\)/);
+	await bridge.close();
+});
 
-	// Mirrors the Claude IDE helper: one client at a time, and the loser is closed
-	// with no status code, which surfaces to the peer as 1005.
-	let current: WebSocket | undefined;
-	wss.on("connection", (socket: WebSocket) => {
-		current?.close();
-		current = socket;
-		socket.on("message", (data) => {
-			const message = JSON.parse(String(data)) as { id?: number; method?: string };
-			if (message.method === "initialize") {
-				socket.send(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-06-18" } }));
-				return;
-			}
-			if (message.method === "tools/list") {
-				socket.send(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools: [] } }));
-			}
-		});
-	});
+test("a handshake that never completes times out without crashing the process", async () => {
+	const sockets: Socket[] = [];
+	const server = createServer();
+	server.on("upgrade", (_request, socket: Socket) => sockets.push(socket));
+	server.listen(0, "127.0.0.1");
+	await once(server, "listening");
+	const port = (server.address() as AddressInfo).port;
 
-	const connection: IdeConnection = {
-		url: `ws://127.0.0.1:${port}`,
-		host: "127.0.0.1",
-		port,
-		authToken: token,
-		ideName: "Cursor",
-		workspaceFolders: ["/tmp"],
-		source: `test:${port}`,
-		transport: "ws",
-	};
-
-	const closes: Array<{ code: number; uptimeMs: number | undefined }> = [];
-	const first = await IdeClient.connect(connection, {
-		onClose: (code) => closes.push({ code, uptimeMs: first.uptimeMs }),
-	});
-	assert.equal(first.connected, true);
-
-	const second = await IdeClient.connect(connection);
+	await assert.rejects(IdeClient.connect(window(port), noHandlers, 100), /Timed out connecting/);
 	await new Promise((resolve) => setTimeout(resolve, 50));
 
-	assert.equal(closes.length, 1);
-	assert.equal(closes[0]?.code, 1005);
-	assert.ok((closes[0]?.uptimeMs ?? Number.MAX_SAFE_INTEGER) < 3_000);
+	for (const socket of sockets) socket.destroy();
+	server.close();
+});
 
+test("onClose fires when the bridge goes away, but not after dispose", async () => {
+	const bridge = await startBridge(() => undefined);
+	const closes: number[] = [];
+	const handlers = { ...noHandlers, onClose: (code: number) => closes.push(code) };
+	const first = await IdeClient.connect(window(bridge.port), handlers);
+	const second = await IdeClient.connect(window(bridge.port), handlers);
 	second.dispose();
-	first.dispose();
-	await new Promise<void>((resolve, reject) => {
-		wss.close((error) => (error ? reject(error) : resolve()));
-	});
+	const pending = first.request("getOpenEditors");
+	await bridge.close();
+	await assert.rejects(pending);
+	await new Promise((resolve) => setTimeout(resolve, 30));
+	assert.equal(closes.length, 1);
+	assert.equal(first.connected, false);
 });

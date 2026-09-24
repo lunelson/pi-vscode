@@ -1,106 +1,61 @@
 import { randomUUID } from "node:crypto";
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import * as vscode from "vscode";
 import { WebSocket, WebSocketServer } from "ws";
+import { AUTH_HEADER } from "../../src/protocol.ts";
 import { removeLock, writeLock } from "./lockfile.ts";
-import { buildTools, serializeSelection, type ToolDefinition } from "./tools.ts";
+import { getDiagnostics, getOpenEditors, serializeSelection } from "./tools.ts";
 
-export const AUTH_HEADER = "x-pi-ide-authorization";
-const PROTOCOL_VERSION = "2025-06-18";
+type Request = { id?: unknown; method?: unknown; params?: Record<string, unknown> };
 
-type Rpc = {
-	jsonrpc?: string;
-	id?: number | string | null;
-	method?: string;
-	params?: Record<string, unknown>;
-};
-
-/**
- * A loopback MCP server for Pi sessions. Unlike the editor bridge Pi used to
- * borrow, this one serves every client that authenticates: connecting never
- * evicts anyone, so several agents can watch the same window at once.
- */
-export class PiIdeServer {
-	private httpServer: Server | undefined;
-	private wss: WebSocketServer | undefined;
+/** Loopback JSON-RPC server for Pi sessions. Serves every authenticated client; connecting never evicts another. */
+export class BridgeServer {
+	private readonly httpServer: Server = createServer();
+	private readonly token = randomUUID();
 	private readonly clients = new Set<WebSocket>();
-	private readonly tools = new Map<string, ToolDefinition>();
 	private readonly disposables: vscode.Disposable[] = [];
+	private port: number | undefined;
 
-	readonly token = randomUUID();
-	port: number | undefined;
+	constructor(private readonly log: vscode.LogOutputChannel) {}
 
-	constructor(
-		private readonly extensionVersion: string,
-		private readonly log: vscode.LogOutputChannel,
-	) {
-		for (const tool of buildTools()) this.tools.set(tool.name, tool);
-	}
-
-	get clientCount(): number {
-		return this.clients.size;
-	}
-
-	async start(): Promise<number> {
-		const httpServer = createServer();
-		this.httpServer = httpServer;
-		const wss = new WebSocketServer({ server: httpServer });
-		this.wss = wss;
-
-		wss.on("connection", (socket, request) => {
-			if (request.headers[AUTH_HEADER] !== this.token) {
-				this.log.warn("Rejected an unauthorized connection");
-				socket.close(1008, "Unauthorized");
-				return;
-			}
+	async start(): Promise<void> {
+		// Checking the token before the upgrade means an unauthenticated peer never gets an open socket.
+		const wss = new WebSocketServer({
+			server: this.httpServer,
+			verifyClient: ({ req }: { req: IncomingMessage }) => req.headers[AUTH_HEADER] === this.token,
+		});
+		wss.on("connection", (socket) => {
 			this.clients.add(socket);
-			this.log.info(`Client connected (${this.clients.size} total)`);
-			socket.on("message", (data) => void this.handle(socket, data.toString()));
-			socket.on("close", () => {
-				this.clients.delete(socket);
-				this.log.info(`Client disconnected (${this.clients.size} remaining)`);
-			});
+			socket.on("message", (data) => void this.handle(socket, String(data)));
+			socket.on("close", () => this.clients.delete(socket));
 			socket.on("error", (error) => this.log.warn(`Client socket error: ${error.message}`));
-			this.pushSelection(socket);
+			const editor = vscode.window.activeTextEditor;
+			if (editor?.document.uri.scheme === "file") this.pushSelection(editor, [socket]);
 		});
 
-		const port = await new Promise<number>((resolve, reject) => {
-			httpServer.once("error", reject);
-			httpServer.listen(0, "127.0.0.1", () => {
-				const address = httpServer.address() as AddressInfo | null;
-				if (!address) {
-					reject(new Error("Could not determine the listening port"));
-					return;
-				}
-				resolve(address.port);
-			});
+		this.port = await new Promise<number>((resolve, reject) => {
+			this.httpServer.once("error", reject);
+			this.httpServer.listen(0, "127.0.0.1", () => resolve((this.httpServer.address() as AddressInfo).port));
 		});
-		this.port = port;
-
 		this.publishLock();
-		this.watchEditor();
-		this.log.info(`Listening on 127.0.0.1:${port}`);
-		return port;
+		this.disposables.push(
+			vscode.window.onDidChangeTextEditorSelection(({ textEditor }) => {
+				if (textEditor.document.uri.scheme === "file") this.pushSelection(textEditor, this.clients);
+			}),
+			vscode.window.onDidChangeActiveTextEditor((editor) => {
+				if (editor?.document.uri.scheme === "file") this.pushSelection(editor, this.clients);
+			}),
+			vscode.workspace.onDidChangeWorkspaceFolders(() => this.publishLock()),
+		);
+		this.log.info(`Listening on 127.0.0.1:${this.port}`);
 	}
 
 	dispose(): void {
 		for (const disposable of this.disposables) disposable.dispose();
-		this.disposables.length = 0;
-		for (const client of this.clients) {
-			try {
-				client.close(1001, "Editor shutting down");
-			} catch {
-				// The client may already be gone.
-			}
-		}
-		this.clients.clear();
+		for (const client of this.clients) client.terminate();
 		if (this.port !== undefined) removeLock(this.port);
-		this.wss?.close();
-		this.wss = undefined;
-		this.httpServer?.close();
-		this.httpServer = undefined;
-		this.port = undefined;
+		this.httpServer.close();
 	}
 
 	private publishLock(): void {
@@ -108,98 +63,46 @@ export class PiIdeServer {
 		writeLock({
 			pid: process.pid,
 			port: this.port,
-			workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
 			ideName: vscode.env.appName,
-			transport: "ws",
+			workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
 			authToken: this.token,
-			extensionVersion: this.extensionVersion,
 		});
 	}
 
-	private watchEditor(): void {
-		this.disposables.push(
-			vscode.window.onDidChangeTextEditorSelection((event) => {
-				if (event.textEditor.document.uri.scheme === "output") return;
-				this.broadcast({ jsonrpc: "2.0", method: "selection_changed", params: serializeSelection(event.textEditor) });
-			}),
-			vscode.window.onDidChangeActiveTextEditor((editor) => {
-				if (!editor || editor.document.uri.scheme === "output") return;
-				this.broadcast({ jsonrpc: "2.0", method: "selection_changed", params: serializeSelection(editor) });
-			}),
-			vscode.languages.onDidChangeDiagnostics((event) => {
-				this.broadcast({
-					jsonrpc: "2.0",
-					method: "diagnostics_changed",
-					params: { uris: event.uris.map((uri) => uri.toString()) },
-				});
-			}),
-			// The lockfile advertises workspaceFolders, which is how a Pi session in
-			// some subdirectory decides this window is the right one.
-			vscode.workspace.onDidChangeWorkspaceFolders(() => this.publishLock()),
-		);
-	}
-
-	private pushSelection(socket: WebSocket): void {
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) return;
-		send(socket, { jsonrpc: "2.0", method: "selection_changed", params: serializeSelection(editor) });
-	}
-
-	private broadcast(message: Record<string, unknown>): void {
-		for (const client of this.clients) send(client, message);
+	private pushSelection(editor: vscode.TextEditor, sockets: Iterable<WebSocket>): void {
+		const message = JSON.stringify({ jsonrpc: "2.0", method: "selection_changed", params: serializeSelection(editor) });
+		for (const socket of sockets) if (socket.readyState === WebSocket.OPEN) socket.send(message);
 	}
 
 	private async handle(socket: WebSocket, raw: string): Promise<void> {
-		let message: Rpc;
+		let request: Request;
 		try {
-			message = JSON.parse(raw) as Rpc;
+			request = JSON.parse(raw) as Request;
 		} catch {
 			return;
 		}
-		const id = message.id;
-		if (id === undefined || id === null) return; // Notification: nothing to answer.
-
+		if (typeof request.id !== "number") return;
+		let reply: Record<string, unknown>;
 		try {
-			send(socket, { jsonrpc: "2.0", id, result: await this.dispatch(message) });
+			reply = { result: await this.dispatch(request) };
 		} catch (error) {
-			const text = error instanceof Error ? error.message : String(error);
-			this.log.error(`${message.method ?? "request"} failed: ${text}`);
-			send(socket, { jsonrpc: "2.0", id, error: { code: -32000, message: text } });
+			const message = error instanceof Error ? error.message : String(error);
+			this.log.error(`${String(request.method)} failed: ${message}`);
+			reply = { error: { code: -32000, message } };
 		}
+		if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ jsonrpc: "2.0", id: request.id, ...reply }));
 	}
 
-	private async dispatch(message: Rpc): Promise<unknown> {
-		switch (message.method) {
-			case "initialize":
-				return {
-					protocolVersion: PROTOCOL_VERSION,
-					capabilities: { tools: { listChanged: false } },
-					serverInfo: { name: "Pi IDE Bridge", version: this.extensionVersion },
-				};
-			case "ping":
-				return {};
-			case "tools/list":
-				return {
-					tools: [...this.tools.values()].map((tool) => ({
-						name: tool.name,
-						description: tool.description,
-						inputSchema: tool.inputSchema,
-					})),
-				};
-			case "tools/call": {
-				const name = typeof message.params?.name === "string" ? message.params.name : "";
-				const tool = this.tools.get(name);
-				if (!tool) throw new Error(`Unknown tool: ${name || "(missing name)"}`);
-				const args = (message.params?.arguments ?? {}) as Record<string, unknown>;
-				return await tool.run(args);
+	private async dispatch(request: Request): Promise<unknown> {
+		switch (request.method) {
+			case "getDiagnostics": {
+				const filePath = request.params?.filePath;
+				return getDiagnostics(typeof filePath === "string" ? filePath : undefined);
 			}
+			case "getOpenEditors":
+				return getOpenEditors();
 			default:
-				throw new Error(`Unsupported method: ${message.method ?? "(missing)"}`);
+				throw new Error(`Unknown method: ${String(request.method)}`);
 		}
 	}
-}
-
-function send(socket: WebSocket, message: Record<string, unknown>): void {
-	if (socket.readyState !== WebSocket.OPEN) return;
-	socket.send(JSON.stringify(message));
 }

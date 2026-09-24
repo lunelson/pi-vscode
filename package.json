@@ -1,61 +1,33 @@
 {
   "name": "@lunelson/pi-vscode",
-  "version": "0.3.0",
-  "description": "Attach a live Pi session to VS Code: editor selection as a cache-friendly prompt section, diagnostics, and open-editor tools, via a bundled bridge extension.",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Attach a live Pi session to VS Code: editor selection as a cache-friendly prompt section, plus diagnostics and open-editor tools, via a companion VS Code extension.",
   "author": "Rahul Arya",
   "license": "MIT",
   "type": "module",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi-coding-agent",
-    "ide",
-    "vscode",
-    "cursor",
-    "windsurf"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/lunelson/pi-vscode.git"
   },
-  "homepage": "https://github.com/lunelson/pi-vscode#readme",
-  "bugs": {
-    "url": "https://github.com/lunelson/pi-vscode/issues"
-  },
-  "files": [
-    "LICENSE",
-    "README.md",
-    "CHANGELOG.md",
-    "dist"
-  ],
-  "exports": {
-    ".": "./dist/index.js",
-    "./package.json": "./package.json"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --packages=external --external:@earendil-works/pi-coding-agent --external:typebox --external:@earendil-works/pi-tui --external:ws && npm run build:vsix",
-    "check": "npm run typecheck && npm run build && npm run test",
+    "build": "esbuild extension/src/extension.ts --bundle --platform=node --format=cjs --target=node18 --outfile=extension/dist/extension.js --external:vscode --external:bufferutil --external:utf-8-validate && cd extension && vsce package --no-dependencies --out ../dist/pi-vscode-bridge.vsix",
+    "install:vscode": "npm run build && code --install-extension dist/pi-vscode-bridge.vsix --force",
+    "check": "npm run typecheck && npm run build && npm test",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p extension/tsconfig.json",
-    "test": "node --import tsx --test test/*.test.ts",
-    "test:smoke": "node scripts/smoke.mjs",
-    "prepublishOnly": "npm run check && npm pack --dry-run",
-    "build:extension": "esbuild extension/src/extension.ts --bundle --platform=node --format=cjs --target=node18 --outfile=extension/dist/extension.js --external:vscode --external:bufferutil --external:utf-8-validate",
-    "build:vsix": "npm run build:extension && cd extension && vsce package --no-dependencies --out ../dist/pi-ide.vsix"
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "pi": {
     "extensions": [
-      "./dist/index.js"
+      "./src/index.ts"
     ]
   },
   "dependencies": {
-    "typebox": "^1.0.17",
     "ws": "^8.18.3"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.86.0"
+    "@earendil-works/pi-coding-agent": ">=0.86.0",
+    "typebox": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.87.1",
@@ -65,8 +37,8 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.25.12",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.0",
-    "ws": "^8.18.3"
+    "typebox": "^1.0.17",
+    "typescript": "^5.9.0"
   },
   "engines": {
     "node": ">=20"

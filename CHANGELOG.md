@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 0.4.0
+
+Cut down to one use case: Pi in any terminal, attached to VS Code, installed from a local checkout.
+
+### Fixed
+
+- A connection attempt that timed out mid-handshake crashed Pi with an uncaught `ws` error.
+- Ending or replacing a session while it was connecting leaked a socket into the dead session.
+- IDE tool failures now throw, so Pi reports them as errors instead of as successful results.
+- The bridge checks the token before the WebSocket upgrade instead of after, and refuses bad tokens with HTTP 401.
+- The lockfile and its directory are forced to `0600` and `0700` even when they already existed.
+- A workspace path containing a folder named like `..cache` no longer counts as outside the workspace.
+
+### Changed
+
+- Pi loads `src/index.ts` directly; there is no Pi-side bundle. The package is private and not published.
+- The bridge speaks plain JSON-RPC (`getDiagnostics`, `getOpenEditors`, `selection_changed`) instead of an MCP subset.
+- The selection is the primary selection only, capped at 4,000 characters, with a count of any extra cursors.
+- `ide_get_diagnostics` and `ide_get_open_editors` are always registered instead of toggled on attach, which kept rewriting the tool list mid-conversation.
+- `/ide` is now `status`, `attach`, and `detach`.
+
+### Removed
+
+- The editor CLI fallback, `/ide install`, `~/.pi/agent/ide.json` and every setting in it, @-mentions, `PI_IDE_PORT`, and support for editors other than VS Code.
+- The `ide_open_file`, `ide_open_diff`, `ide_get_selection`, and `ide_get_workspace_folders` tools.
+- The bridge's restart and status commands and its `piIde.enabled` setting.
+- The npm release workflow.
+
 ## 0.3.0
 
 First release of the `@lunelson/pi-vscode` fork.

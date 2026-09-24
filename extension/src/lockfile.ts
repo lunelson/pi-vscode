@@ -1,51 +1,35 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { LOCK_DIR, isProcessAlive, type LockContents } from "../../src/protocol.ts";
 
-export const LOCK_DIR = join(homedir(), ".pi", "ide");
-
-export type LockContents = {
-	pid: number;
-	port: number;
-	workspaceFolders: string[];
-	ideName: string;
-	transport: "ws";
-	authToken: string;
-	extensionVersion: string;
-};
-
-export function lockPathFor(port: number): string {
-	return join(LOCK_DIR, `${port}.lock`);
+export function lockPath(port: number, dir: string = LOCK_DIR): string {
+	return join(dir, `${port}.lock`);
 }
 
-export function writeLock(contents: LockContents): string {
-	mkdirSync(LOCK_DIR, { recursive: true });
-	const path = lockPathFor(contents.port);
-	// Mode 0600: the token in this file is the only thing gating socket access.
+/** The token in the lockfile is the only thing gating the socket, so only this user may read it. */
+export function writeLock(contents: LockContents, dir: string = LOCK_DIR): void {
+	mkdirSync(dir, { recursive: true, mode: 0o700 });
+	// mkdir's mode applies only when it creates the directory.
+	chmodSync(dir, 0o700);
+	const path = lockPath(contents.port, dir);
+	// writeFile's mode applies only on creation, so never write into an existing file.
+	rmSync(path, { force: true });
 	writeFileSync(path, `${JSON.stringify(contents, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-	return path;
 }
 
-export function removeLock(port: number): void {
-	try {
-		rmSync(lockPathFor(port), { force: true });
-	} catch {
-		// A missing lockfile is the desired end state anyway.
-	}
+export function removeLock(port: number, dir: string = LOCK_DIR): void {
+	rmSync(lockPath(port, dir), { force: true });
 }
 
-/**
- * Delete lockfiles whose owning window is gone. Editors are killed rather than
- * closed often enough that without this the directory fills with dead ports.
- */
+/** Delete lockfiles whose editor process is gone. Editors are killed rather than closed often enough to matter. */
 export function pruneStaleLocks(currentPid: number, dir: string = LOCK_DIR): number {
-	let removed = 0;
 	let entries: string[];
 	try {
 		entries = readdirSync(dir);
 	} catch {
 		return 0;
 	}
+	let removed = 0;
 	for (const entry of entries) {
 		if (!entry.endsWith(".lock")) continue;
 		const path = join(dir, entry);
@@ -55,22 +39,9 @@ export function pruneStaleLocks(currentPid: number, dir: string = LOCK_DIR): num
 		} catch {
 			continue;
 		}
-		if (typeof pid !== "number" || pid === currentPid || alive(pid)) continue;
-		try {
-			rmSync(path, { force: true });
-			removed += 1;
-		} catch {
-			// Another window may have pruned it first.
-		}
+		if (typeof pid !== "number" || pid === currentPid || isProcessAlive(pid)) continue;
+		rmSync(path, { force: true });
+		removed += 1;
 	}
 	return removed;
-}
-
-function alive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return error && typeof error === "object" && "code" in error ? String(error.code) === "EPERM" : false;
-	}
 }

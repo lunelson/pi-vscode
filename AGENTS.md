@@ -1,50 +1,34 @@
 # pi-vscode
 
-Fork of `pi-ide-integration` (upstream remote: `Rahularya01/pi-ide-integration`). Pi package that attaches a live Pi session to a VS Code-family IDE. It ships its own editor extension (`extension/`), installs it through the editor CLI, and connects to it over a loopback WebSocket.
+Fork of `pi-ide-integration` (upstream remote: `Rahularya01/pi-ide-integration`), cut down to one use case: Pi running in any terminal, attached to VS Code, both halves installed from this checkout. Keep it that narrow; don't add features for other editors, publishing, or configuration without being asked.
 
 ## Development
 
 ```bash
 npm install
-npm test
-npm run build
+npm run check   # typecheck, build dist/pi-vscode-bridge.vsix, test
 ```
 
-- Run `npm test` before committing.
-- Run `npm pack --dry-run` before publishing.
-- `npm run build` produces both `dist/index.js` (the Pi extension) and `dist/pi-ide.vsix` (the editor extension). Regenerate after source changes in either half.
+Run `npm run check` before committing. `npm run install:vscode` installs the built VSIX into VS Code.
 
 ## Architecture
 
-- `extension/` — the Pi IDE Bridge editor extension: multi-client MCP server, lockfile publisher, selection/diagnostics push
-- `src/discover.ts` — `PI_IDE_PORT` + `~/.pi/ide` lockfile scan
-- `src/install.ts` — editor CLI detection and `--install-extension` of the bundled VSIX
-- `src/client.ts` — localhost WebSocket MCP client
-- `src/context.ts` — selection / @-mention formatting
-- `src/cli-fallback.ts` — `cursor` / `code` / `windsurf` / `codium` open + diff
-- `src/config.ts` — `~/.pi/agent/ide.json`
-- `src/index.ts` — `/ide` command, tools, session lifecycle
+- `src/protocol.ts` — lockfile location and shape, auth header, selection payload. Shared by both halves, so it may import only Node built-ins.
+- `src/discover.ts` — reads `~/.pi/ide/*.lock` and ranks windows by how specifically their folders contain the cwd.
+- `src/client.ts` — authenticated JSON-RPC WebSocket client.
+- `src/context.ts` — renders the `ide_context` section and the footer label.
+- `src/index.ts` — Pi extension: attach poll, `/ide`, the two tools, the section.
+- `extension/src/` — the VS Code bridge: server, lockfile, diagnostics and open-editor queries.
+
+Pi loads `src/index.ts` through jiti; there is no Pi-side build. `extension/src` is bundled to CommonJS by esbuild because VS Code needs a CJS entry point.
 
 ## Constraints
 
-- Bind and connect to loopback only.
-- Never log auth tokens.
-- Only the editor extension writes `~/.pi/ide/*.lock`. The Pi side reads them.
-- The extension must serve every authenticated client. Never disconnect one client because another connected — that single-slot behaviour is the bug this package exists to avoid.
-- Do not start sockets, polls, or watchers from the extension factory. Start on `session_start`, stop on `session_shutdown`.
-- Never write a session file from a second `pi --mode rpc` process.
-- Keep IDE tools inactive unless a session is attached.
-- Send editor state only through the `ide_context` section on `systemPromptOptions.sections`. Never return `systemPrompt` from `before_agent_start`: it replaces the whole prompt and defeats prefix caching. Section text must depend only on editor state, because any per-turn variation appends a patch on every prompt.
+- Bind and connect to loopback only. Never log auth tokens.
+- Only the bridge writes `~/.pi/ide/*.lock`; Pi only reads them.
+- The bridge serves every authenticated client. Never disconnect one client because another connected.
+- Start sockets and polls on `session_start` and stop them on `session_shutdown`, never in the extension factory. A disposed session's runtime must not touch its `ui`.
+- Editor state reaches the model only as the `ide_context` section on `systemPromptOptions.sections`. Never return `systemPrompt` from `before_agent_start`: it replaces the whole prompt and defeats prefix caching. Section text must depend only on editor state, or every prompt appends a patch.
+- Tools stay registered and active; they throw when detached. Toggling them rewrites the tool list mid-conversation.
 - Automatic attach must not choose between windows tied for the most specific workspace folder.
-- Installing into the editor is a side effect: it happens on an explicit `/ide` command, never at session start, and `autoInstall: false` must disable it.
-- `extension/src` is authored as CommonJS because VS Code requires a CJS entry point; the root sources are ESM.
-- Tests must not touch the real `~/.pi/agent` or `~/.pi/ide` directories.
-
-## Releases
-
-1. Update `package.json` version, `extension/package.json` version, and `CHANGELOG.md` (add a `## <version>` section — the release workflow lifts it verbatim into the GitHub release notes).
-2. Run `npm test` and verify the packed artifact imports from a clean temporary install.
-3. Confirm `dist/pi-ide.vsix` is present in `npm pack --dry-run` output.
-4. Commit, tag `v<version>`, and push `main` plus the tag. Pushing the tag triggers `.github/workflows/release.yml`, which reruns `npm run check`, verifies the tag matches `package.json`, publishes to npm, and creates the GitHub release — no manual `npm publish` needed.
-
-CI (`.github/workflows/ci.yml`) runs `npm run check` on every push and pull request against `main`. The release workflow needs an `NPM_TOKEN` repository secret (an npmjs.com automation token) with publish rights to `@lunelson/pi-vscode`; without it, tag pushes fail at the publish step.
+- Tests must not touch the real `~/.pi` directories.

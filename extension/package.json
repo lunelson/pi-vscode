@@ -1,9 +1,10 @@
 {
   "name": "pi-vscode-bridge",
-  "displayName": "Pi IDE Bridge",
-  "description": "Serves editor context (selection, diagnostics, open editors) to Pi Coding Agent sessions over a loopback MCP socket.",
-  "version": "0.3.0",
+  "displayName": "Pi VS Code Bridge",
+  "description": "Serves editor selection, diagnostics, and open editors to Pi Coding Agent sessions over an authenticated loopback socket.",
+  "version": "0.4.0",
   "publisher": "lunelson",
+  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/lunelson/pi-vscode.git"
@@ -12,21 +13,5 @@
   "engines": { "vscode": "^1.85.0" },
   "categories": ["AI", "Other"],
   "activationEvents": ["onStartupFinished"],
-  "main": "./dist/extension.js",
-  "contributes": {
-    "commands": [
-      { "command": "piIde.showStatus", "title": "Pi: Show IDE Bridge Status" },
-      { "command": "piIde.restart", "title": "Pi: Restart IDE Bridge" }
-    ],
-    "configuration": {
-      "title": "Pi IDE Bridge",
-      "properties": {
-        "piIde.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Serve editor context to Pi Coding Agent sessions."
-        }
-      }
-    }
-  }
+  "main": "./dist/extension.js"
 }

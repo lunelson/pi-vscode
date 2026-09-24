@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Attaching to a VS Code window with a file open crashed Pi (`Cannot access 'client' before initialization`), because the bridge's initial selection push arrived before the connection was recorded.
+- A connection that closed during the attach handshake left a dead client in place that blocked reconnecting.
+
 ## 0.4.0
 
 Cut down to one use case: Pi in any terminal, attached to VS Code, installed from a local checkout.

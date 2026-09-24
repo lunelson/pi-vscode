@@ -1,9 +1,8 @@
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { IdeClient } from "./client.ts";
-import { IDE_CONTEXT_SECTION, formatIdeContext, formatSelectionStatus, parseSelection } from "./context.ts";
+import { IDE_CONTEXT_SECTION, formatIdeContext, formatSelectionStatus } from "./context.ts";
 import { bestWindows, matchingWindows, windowKey, windowLabel, type IdeWindow } from "./discover.ts";
-import type { SelectionParams } from "./protocol.ts";
 
 const POLL_INTERVAL_MS = 2_500;
 const NOT_ATTACHED = "No VS Code window is attached. Open this folder in VS Code with the Pi bridge installed, or run /ide attach.";
@@ -13,9 +12,8 @@ type Runtime = {
 	cwd: string;
 	ui: ExtensionContext["ui"];
 	poll: ReturnType<typeof setInterval>;
+	/** The selection lives on the client, so dropping the client drops the selection. */
 	client?: IdeClient;
-	/** Only ever set while `client` is attached; everything that drops the client clears it. */
-	selection?: SelectionParams;
 	/** Set by /ide detach; automatic attach stays off until /ide attach. */
 	detached: boolean;
 	attaching: boolean;
@@ -63,22 +61,19 @@ export default function piVscode(pi: ExtensionAPI) {
 		try {
 			const target = chooseWindow(current, matchingWindows(current.cwd));
 			if (!target) return;
-			current.selection = undefined;
-			const client: IdeClient = await IdeClient.connect(target, {
-				onSelection: (params) => {
-					if (current.disposed || current.client !== client) return;
-					current.selection = parseSelection(params) ?? current.selection;
-					refreshStatus(current);
+			const client = await IdeClient.connect(target, {
+				onSelection: (updated) => {
+					if (!current.disposed && current.client === updated) refreshStatus(current);
 				},
-				onClose: (code) => {
-					if (current.disposed || current.client !== client) return;
+				onClose: (closed, code) => {
+					if (current.disposed || current.client !== closed) return;
 					current.client = undefined;
-					current.selection = undefined;
 					current.lastError = `${windowLabel(target)} closed the connection (${code}).`;
 					refreshStatus(current);
 				},
 			});
-			if (current.disposed || current.detached) {
+			if (current.disposed || current.detached || !client.connected) {
+				if (!client.connected) current.lastError = `${windowLabel(target)} closed the connection.`;
 				client.dispose();
 				return;
 			}
@@ -96,7 +91,6 @@ export default function piVscode(pi: ExtensionAPI) {
 	const dropClient = (current: Runtime): void => {
 		current.client?.dispose();
 		current.client = undefined;
-		current.selection = undefined;
 	};
 
 	const attachCommand = async (current: Runtime, ctx: ExtensionCommandContext): Promise<void> => {
@@ -162,9 +156,10 @@ export default function piVscode(pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", (event) => {
-		if (!runtime?.selection) return;
+		const selection = runtime?.client?.selection;
+		if (!selection) return;
 		// Sections are rebuilt every run, so skipping this when detached is what makes Pi remove the section.
-		event.systemPromptOptions.sections[IDE_CONTEXT_SECTION] = formatIdeContext(runtime.selection);
+		event.systemPromptOptions.sections[IDE_CONTEXT_SECTION] = formatIdeContext(selection);
 	});
 
 	pi.registerCommand("ide", {
@@ -213,7 +208,7 @@ function disposeRuntime(runtime: Runtime): void {
 function refreshStatus(runtime: Runtime): void {
 	if (runtime.disposed) return;
 	if (runtime.client) {
-		const selection = runtime.selection ? ` · ${formatSelectionStatus(runtime.selection)}` : "";
+		const selection = runtime.client.selection ? ` · ${formatSelectionStatus(runtime.client.selection)}` : "";
 		runtime.ui.setStatus("ide", `IDE ${runtime.client.window.ideName}${selection}`);
 	} else if (runtime.tied) {
 		runtime.ui.setStatus("ide", `IDE ? ${runtime.tied.length} windows · /ide attach`);
@@ -224,8 +219,9 @@ function refreshStatus(runtime: Runtime): void {
 
 function statusText(runtime: Runtime): string {
 	if (runtime.client) {
-		const selection = runtime.selection ? `${runtime.selection.filePath}:${runtime.selection.start.line + 1}` : "none";
-		return `Attached to ${windowLabel(runtime.client.window)}\nselection: ${selection}`;
+		const { selection } = runtime.client;
+		const where = selection ? `${selection.filePath}:${selection.start.line + 1}` : "none";
+		return `Attached to ${windowLabel(runtime.client.window)}\nselection: ${where}`;
 	}
 	if (runtime.detached) return "Detached. Run /ide attach to reconnect.";
 	return `Not attached. ${runtime.lastError ?? "Waiting for a VS Code window with this folder open."}`;

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { WebSocketServer } from "ws";
 import { IdeClient, type IdeClientHandlers } from "../src/client.ts";
 import type { IdeWindow } from "../src/discover.ts";
-import { AUTH_HEADER } from "../src/protocol.ts";
+import { AUTH_HEADER, type SelectionParams } from "../src/protocol.ts";
 
 const window = (port: number, authToken = "secret"): IdeWindow => ({
 	pid: process.pid,
@@ -42,19 +42,32 @@ const startBridge = async (respond: (method: string, params: unknown) => { resul
 	return { wss, port: (wss.address() as AddressInfo).port, close };
 };
 
-test("requests round-trip and selection notifications reach the handler", async () => {
+test("requests round-trip and selection notifications update the client", async () => {
 	const bridge = await startBridge((method, params) => ({ result: { method, params } }));
-	const selections: unknown[] = [];
-	const client = await IdeClient.connect(window(bridge.port), { ...noHandlers, onSelection: (params) => selections.push(params) });
+	const notified: IdeClient[] = [];
+	const client = await IdeClient.connect(window(bridge.port), { ...noHandlers, onSelection: (updated) => notified.push(updated) });
 	assert.equal(client.connected, true);
 	assert.deepEqual(await client.request("getDiagnostics", { filePath: "/repo/a.ts" }), {
 		method: "getDiagnostics",
 		params: { filePath: "/repo/a.ts" },
 	});
 
-	for (const socket of bridge.wss.clients) socket.send(JSON.stringify({ jsonrpc: "2.0", method: "selection_changed", params: { x: 1 } }));
+	const selection: SelectionParams = {
+		filePath: "/repo/a.ts",
+		start: { line: 2, character: 0 },
+		end: { line: 2, character: 5 },
+		text: "hello",
+		textLength: 5,
+		extraSelections: 0,
+	};
+	const push = (params: unknown) => {
+		for (const socket of bridge.wss.clients) socket.send(JSON.stringify({ jsonrpc: "2.0", method: "selection_changed", params }));
+	};
+	push(selection);
+	push({ x: 1 });
 	await new Promise((resolve) => setTimeout(resolve, 30));
-	assert.deepEqual(selections, [{ x: 1 }]);
+	assert.deepEqual(notified, [client, client]);
+	assert.deepEqual(client.selection, selection, "a malformed selection keeps the last good one");
 
 	client.dispose();
 	assert.equal(client.connected, false);
@@ -94,7 +107,7 @@ test("a handshake that never completes times out without crashing the process", 
 test("onClose fires when the bridge goes away, but not after dispose", async () => {
 	const bridge = await startBridge(() => undefined);
 	const closes: number[] = [];
-	const handlers = { ...noHandlers, onClose: (code: number) => closes.push(code) };
+	const handlers: IdeClientHandlers = { ...noHandlers, onClose: (_client, code) => closes.push(code) };
 	const first = await IdeClient.connect(window(bridge.port), handlers);
 	const second = await IdeClient.connect(window(bridge.port), handlers);
 	second.dispose();

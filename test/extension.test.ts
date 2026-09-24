@@ -93,9 +93,10 @@ const beforeAgentStart = async (pi: ReturnType<typeof fakePi>, cwd: string) => {
 	return { section: systemPromptOptions.sections.ide_context, result };
 };
 
-/** A bridge double that authenticates like the real one and answers both methods. */
+/** A bridge double that authenticates like the real one, answers both methods, and pushes the active selection to each new connection. */
 const startBridge = async (folder: string, { ideName = "Visual Studio Code", handshakeDelayMs = 0 } = {}) => {
 	const token = `token-${Math.random()}`;
+	let active: string | undefined;
 	const wss = new WebSocketServer({
 		host: "127.0.0.1",
 		port: 0,
@@ -109,6 +110,7 @@ const startBridge = async (folder: string, { ideName = "Visual Studio Code", han
 			const { id, method } = JSON.parse(String(data)) as { id: number; method: string };
 			socket.send(JSON.stringify({ jsonrpc: "2.0", id, result: { method, ideName } }));
 		});
+		if (active) socket.send(active);
 	});
 	const port = (wss.address() as AddressInfo).port;
 	const lock: LockContents = { pid: process.pid, port, ideName, workspaceFolders: [folder], authToken: token };
@@ -125,7 +127,8 @@ const startBridge = async (folder: string, { ideName = "Visual Studio Code", han
 			extraSelections: 0,
 			...selection,
 		};
-		for (const socket of wss.clients) socket.send(JSON.stringify({ jsonrpc: "2.0", method: "selection_changed", params }));
+		active = JSON.stringify({ jsonrpc: "2.0", method: "selection_changed", params });
+		for (const socket of wss.clients) socket.send(active);
 		await settle();
 	};
 	const close = async () => {
@@ -161,9 +164,27 @@ test("editor selection reaches the model only as the ide_context section, and le
 	assert.equal((await beforeAgentStart(pi, cwd)).section, undefined);
 	assert.equal(statuses.at(-1), undefined);
 
+	await bridge.select({ text: "export const y = 2" });
 	await pi.command("attach", { ui });
+	await settle();
 	assert.equal(bridge.connections(), 1);
-	assert.equal((await beforeAgentStart(pi, cwd)).section, undefined, "a stale selection does not survive reattach");
+	const reattached = (await beforeAgentStart(pi, cwd)).section ?? "";
+	assert.match(reattached, /export const y = 2/, "reattach takes the selection VS Code pushes on connect");
+	assert.doesNotMatch(reattached, /export const x = 1/, "a stale selection does not survive reattach");
+});
+
+test("a selection VS Code pushes as the socket opens is picked up", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "pi-vscode-repo-"));
+	const bridge = await startBridge(cwd);
+	await bridge.select();
+	const pi = fakePi();
+	const { ui, statuses } = fakeUi();
+
+	await pi.emit("session_start", { type: "session_start" }, { cwd, ui });
+	await settle();
+	assert.equal(bridge.connections(), 1);
+	assert.match((await beforeAgentStart(pi, cwd)).section ?? "", /export const x = 1/);
+	assert.equal(statuses.at(-1), "IDE Visual Studio Code · a.ts:1");
 });
 
 test("tools answer through the attached window and throw when detached", async () => {

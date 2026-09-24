@@ -1,13 +1,18 @@
 import { WebSocket } from "ws";
+import { parseSelection } from "./context.ts";
 import type { IdeWindow } from "./discover.ts";
-import { AUTH_HEADER } from "./protocol.ts";
+import { AUTH_HEADER, type SelectionParams } from "./protocol.ts";
 
 const CONNECT_TIMEOUT_MS = 8_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
+/**
+ * Handlers receive the client because the bridge pushes a selection as soon as the socket
+ * opens, which `ws` delivers before the caller's `await IdeClient.connect(...)` resumes.
+ */
 export type IdeClientHandlers = {
-	onSelection: (params: unknown) => void;
-	onClose: (code: number) => void;
+	onSelection: (client: IdeClient) => void;
+	onClose: (client: IdeClient, code: number) => void;
 };
 
 type Pending = {
@@ -38,6 +43,8 @@ function discard(socket: WebSocket): void {
 
 /** JSON-RPC client for the VS Code bridge. The bridge checks the token before upgrading, so an open socket is authenticated. */
 export class IdeClient {
+	/** The latest selection VS Code pushed on this connection. */
+	selection?: SelectionParams;
 	private readonly pending = new Map<number, Pending>();
 	private nextId = 0;
 	private disposed = false;
@@ -51,7 +58,7 @@ export class IdeClient {
 		socket.on("error", ignore);
 		socket.on("close", (code) => {
 			this.rejectAll(new Error("VS Code closed the connection"));
-			if (!this.disposed) handlers.onClose(code);
+			if (!this.disposed) handlers.onClose(this, code);
 		});
 	}
 
@@ -107,7 +114,8 @@ export class IdeClient {
 			return;
 		}
 		if (message.method === "selection_changed") {
-			this.handlers.onSelection(message.params);
+			this.selection = parseSelection(message.params) ?? this.selection;
+			this.handlers.onSelection(this);
 			return;
 		}
 		if (typeof message.id !== "number") return;

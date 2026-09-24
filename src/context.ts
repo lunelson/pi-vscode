@@ -68,34 +68,43 @@ export function appendMentionToEditor(current: string, mention: IdeMention): str
 	return `${current}${needsSpace ? " " : ""}${token}`;
 }
 
-export function formatIdeContext(selection: IdeSelection | undefined, mentions: IdeMention[], maxChars: number): string | undefined {
+/** System prompt section that carries live editor state. Pi wraps it in `<ide_context>` tags. */
+export const IDE_CONTEXT_SECTION = "ide_context";
+
+/**
+ * Body of the `ide_context` prompt section. Pi appends a section patch only when this
+ * text changes, so it must be a pure function of the selection: anything that varies per
+ * turn without the editor changing would patch the transcript on every prompt.
+ */
+export function formatIdeContext(selection: IdeSelection | undefined, maxChars: number): string | undefined {
+	if (!selection) return undefined;
 	const lines: string[] = [];
 
-	if (selection) {
-		for (const range of selection.ranges) {
-			const start = range.selection.start.line + 1;
-			const end = range.selection.end.line + 1;
-			const span = start === end ? `L${start}` : `L${start}-${end}`;
-			const text = truncate(range.text.trimEnd(), maxChars);
-			if (text) {
-				lines.push(`Active selection in ${selection.filePath} (${span}):`);
-				lines.push("```");
-				lines.push(text);
-				lines.push("```");
-			} else {
-				lines.push(`Active cursor in ${selection.filePath} (${span}).`);
-			}
+	for (const range of selection.ranges) {
+		const start = range.selection.start.line + 1;
+		const end = range.selection.end.line + 1;
+		const span = start === end ? `L${start}` : `L${start}-${end}`;
+		const text = truncate(range.text.trimEnd(), maxChars);
+		if (text) {
+			lines.push(`Active selection in ${selection.filePath} (${span}):`);
+			lines.push("```");
+			lines.push(text);
+			lines.push("```");
+		} else {
+			lines.push(`Active cursor in ${selection.filePath} (${span}).`);
 		}
 	}
 
-	if (mentions.length > 0) {
-		lines.push(`IDE @-mentions: ${mentions.map(formatMention).join(", ")}`);
-	}
-
 	if (lines.length === 0) return undefined;
-	return ["# IDE context", "The user is attached to a VS Code-family editor. This is live editor state, not a project file dump.", ...lines].join(
-		"\n",
-	);
+	return [
+		"Live state of the user's attached VS Code-family editor, not a project file dump. A later ide_context section replaces this one.",
+		...lines,
+	].join("\n");
+}
+
+export function formatMentions(mentions: IdeMention[]): string | undefined {
+	if (mentions.length === 0) return undefined;
+	return `IDE @-mentions: ${mentions.map(formatMention).join(", ")}`;
 }
 
 /**

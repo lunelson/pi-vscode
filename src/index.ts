@@ -3,7 +3,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { IdeClient } from "./client.ts";
 import { detectCliFallback, diffInIde, openInIde } from "./cli-fallback.ts";
 import { loadConfig, saveConfig } from "./config.ts";
-import { appendMentionToEditor, formatIdeContext, formatMention, formatSelectionStatus } from "./context.ts";
+import {
+	IDE_CONTEXT_SECTION,
+	appendMentionToEditor,
+	formatIdeContext,
+	formatMention,
+	formatMentions,
+	formatSelectionStatus,
+} from "./context.ts";
 import { connectionLabel, listConnections } from "./discover.ts";
 import { installBridge, isBridgeInstalled } from "./install.ts";
 import type { CliFallback, IdeConfig, IdeConnection, IdeMention, IdeSelection } from "./types.ts";
@@ -82,13 +89,21 @@ export default function piIdeIntegration(pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", async (event) => {
-		if (!runtime?.config.injectSelection) return;
-		const snippet = formatIdeContext(runtime.selection, runtime.mentions, runtime.config.maxSelectionChars);
+		if (!runtime) return;
+		const mentions = runtime.mentions;
 		runtime.mentions = [];
-		if (!snippet) return;
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${snippet}`,
-		};
+		if (!runtime.config.injectSelection) return;
+
+		// Sections are rebuilt every run, so leaving this unset tells Pi to remove it.
+		const ideContext = runtime.client?.connected
+			? formatIdeContext(runtime.selection, runtime.config.maxSelectionChars)
+			: undefined;
+		if (ideContext) event.systemPromptOptions.sections[IDE_CONTEXT_SECTION] = ideContext;
+
+		// Mentions are one-shot, so they ride along as a message instead of churning the section.
+		const unsent = formatMentions(mentions.filter((mention) => !event.prompt.includes(formatMention(mention))));
+		if (!unsent) return;
+		return { message: { customType: "ide-mentions", content: unsent, display: false } };
 	});
 
 	pi.registerCommand("ide", {

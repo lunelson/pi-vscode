@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	IDE_CONTEXT_SECTION,
 	appendMentionToEditor,
 	formatIdeContext,
 	formatMention,
+	formatMentions,
 	formatSelectionStatus,
 	normalizeMention,
 	normalizeSelection,
@@ -25,25 +27,45 @@ test("normalizeSelection accepts both single and ranges payloads", () => {
 	assert.equal(ranges?.ranges[0]?.selection.start.line, 1);
 });
 
-test("formatIdeContext includes selection and mentions without dumping huge text", () => {
-	const text = formatIdeContext(
-		{
-			filePath: "/tmp/a.ts",
-			ranges: [
-				{
-					text: "abc".repeat(100),
-					selection: { start: { line: 3, character: 0 }, end: { line: 5, character: 0 } },
-				},
-			],
-		},
-		[{ filePath: "/tmp/b.ts", lineStart: 10, lineEnd: 12 }],
-		20,
-	);
+test("formatIdeContext renders the selection without dumping huge text", () => {
+	const selection = {
+		filePath: "/tmp/a.ts",
+		ranges: [
+			{
+				text: "abc".repeat(100),
+				selection: { start: { line: 3, character: 0 }, end: { line: 5, character: 0 } },
+			},
+		],
+	};
+	const text = formatIdeContext(selection, 20);
 	assert.ok(text);
-	assert.match(text, /# IDE context/);
 	assert.match(text, /\/tmp\/a\.ts \(L4-6\)/);
 	assert.match(text, /truncated/);
-	assert.match(text, /@\/tmp\/b\.ts#L10-12/);
+	assert.doesNotMatch(text, /<\/?ide_context>/, "Pi adds the section tags itself");
+	assert.equal(formatIdeContext(structuredClone(selection), 20), text, "unchanged editor state must not patch the prompt");
+});
+
+test("formatIdeContext is empty without a selection", () => {
+	assert.equal(formatIdeContext(undefined, 20), undefined);
+	assert.equal(formatIdeContext({ filePath: "/tmp/a.ts", ranges: [] }, 20), undefined);
+});
+
+test("formatIdeContext reports a bare cursor", () => {
+	const text = formatIdeContext(
+		{ filePath: "/tmp/a.ts", ranges: [{ text: "", selection: { start: { line: 8, character: 2 }, end: { line: 8, character: 2 } } }] },
+		20,
+	);
+	assert.match(text ?? "", /Active cursor in \/tmp\/a\.ts \(L9\)\./);
+});
+
+test("IDE_CONTEXT_SECTION is a valid Pi section name", () => {
+	assert.match(IDE_CONTEXT_SECTION, /^[a-z][a-z0-9_-]*$/);
+	assert.notEqual(IDE_CONTEXT_SECTION, "preamble");
+});
+
+test("formatMentions lists one-shot mentions", () => {
+	assert.equal(formatMentions([]), undefined);
+	assert.equal(formatMentions([{ filePath: "/tmp/b.ts", lineStart: 10, lineEnd: 12 }]), "IDE @-mentions: @/tmp/b.ts#L10-12");
 });
 
 test("appendMentionToEditor is idempotent", () => {
